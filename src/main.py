@@ -313,7 +313,7 @@ def compute_elmo_embeddings(tokenized_lines, expt_name):
         with open(tokenized_sentences_file_path, 'w') as f:
             f.write('\n'.join(normalized_lines))
 
-        generate_elmo_vectors = 'python3 -m allennlp.run elmo {} {} --all'.format(
+        generate_elmo_vectors = 'python -m allennlp.run elmo {} {} --all'.format(
             tokenized_sentences_file_path,
             elmo_embeddings_file_path
         )
@@ -324,6 +324,51 @@ def compute_elmo_embeddings(tokenized_lines, expt_name):
         print('Using precomputed embeddings at', elmo_embeddings_file_path)
     embedding_file = h5py.File(elmo_embeddings_file_path, 'r')
     return embedding_file
+
+
+def run_parse(args):
+    if not os.path.exists(args.experiment_directory):
+        os.mkdir(args.experiment_directory)
+
+    print("Loading input")
+    with open(args.input_file, 'r') as f:
+        lines = f.read().splitlines()
+
+    print("Loading spaCy")
+    nlp = spacy.load('en')
+
+    print("Processing input")
+    processed_lines = []
+    for sentence_number, line in enumerate(lines):
+        tokens = [token.text for token in nlp(line)]
+        processed_lines.append(' '.join(tokens))
+
+    print("Loading model")
+    model = dy.ParameterCollection()
+    [parser] = dy.load(args.model_path, model)
+    print("Computing ELMo embeddings")
+    embedding_file = compute_elmo_embeddings(processed_lines,
+                                             os.path.join(args.experiment_directory, 'parse'))
+    print("Creating sentences")
+    sentences = [[(None, word) for word in line.split()] for line in processed_lines]
+    output_string = ''
+
+    print("Parsing")
+    num_sentences = len(sentences)
+
+    try:
+        with open(os.path.join(args.experiment_directory, 'parses.txt'), 'w') as f:
+            for sentence_number, sentence in enumerate(sentences):
+                if sentence_number % 20 == 0:
+                    print("\r%s/%s (%s%%)" % (sentence_number, num_sentences, sentence_number * 100 / num_sentences), end="")
+                elmo_embeddings_np = embedding_file[str(sentence_number)][:, :, :]
+                assert elmo_embeddings_np.shape[1] == len(sentence)
+                elmo_embeddings = dy.inputTensor(elmo_embeddings_np)
+                parse = parser.span_parser(sentence, is_train=False, elmo_embeddings=elmo_embeddings)
+                parse_string = parse.convert().linearize()
+                f.write(parse_string + '\n')
+    finally:
+        print('Done.%35s' % '')
 
 
 def test_on_brackets(args):
@@ -1125,6 +1170,17 @@ def main():
                            required=True,
                            help='File with sentences and partial bracketings.')
     subparser.add_argument("--model-path", required=True)
+    subparser.add_argument("--experiment-directory", required=True)
+
+    subparser = subparsers.add_parser("parse")
+    subparser.set_defaults(callback=run_parse)
+    for arg in dynet_args:
+        subparser.add_argument(arg)
+    subparser.add_argument("--input-file",
+                           required=True,
+                           help='File with sentences.')
+    subparser.add_argument("--model-path", required=True)
+    subparser.add_argument("--simple-token", action="store_true")
     subparser.add_argument("--experiment-directory", required=True)
 
     subparser = subparsers.add_parser("produce-elmo-for-treebank")

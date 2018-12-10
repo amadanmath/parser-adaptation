@@ -55,6 +55,15 @@ class InternalTreebankNode(TreebankNode):
         return InternalTreebankNode("*".join(sublabels), children)
 
 
+WORD_REPLACEMENTS = {
+    '(': '-LRB-',
+    ')': '-RRB-',
+    '[': '-LSB-',
+    ']': '-RSB-',
+    '{': '-LCB-',
+    '{': '-RCB-',
+}
+
 class LeafTreebankNode(TreebankNode):
     def __init__(self, tag, word):
         assert isinstance(tag, str)
@@ -65,7 +74,7 @@ class LeafTreebankNode(TreebankNode):
         self.leaves = [self]
 
     def linearize(self, erase_labels=False):
-        return "({} {})".format(self.tag, self.word)
+        return "({} {})".format(self.tag, WORD_REPLACEMENTS.get(self.word, self.word))
 
     def convert(self, index=0):
         return LeafParseNode(index, self.tag, self.word)
