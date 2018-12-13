@@ -334,6 +334,22 @@ def run_parse(args):
     with open(args.input_file, 'r') as f:
         lines = f.read().splitlines()
 
+    if args.lines:
+        lines_array = (args.lines.split(':') + [''] * 3)[:3]
+        lines_plus = lines_array[1].startswith('+')
+        lines_array = [(int(x) if x else None) for x in lines_array]
+        if lines_plus:
+            lines_array[1] += lines_array[0]
+        lines_slice = slice(*lines_array)
+        lines_offset = lines_slice.start
+        lines_step = lines_slice.step or 1
+        lines = lines[lines_slice]
+        print("Using", lines_slice)
+    else:
+        lines_offset = 0
+        lines_step = 1
+
+
     print("Loading spaCy")
     nlp = spacy.load('en')
 
@@ -361,7 +377,7 @@ def run_parse(args):
             for sentence_number, sentence in enumerate(sentences):
                 if sentence_number % 20 == 0:
                     print("\r%s/%s (%s%%)" % (sentence_number, num_sentences, sentence_number * 100 / num_sentences), end="")
-                elmo_embeddings_np = embedding_file[str(sentence_number)][:, :, :]
+                elmo_embeddings_np = embedding_file[str(sentence_number * lines_step + lines_offset)][:, :, :]
                 assert elmo_embeddings_np.shape[1] == len(sentence)
                 elmo_embeddings = dy.inputTensor(elmo_embeddings_np)
                 parse = parser.span_parser(sentence, is_train=False, elmo_embeddings=elmo_embeddings)
@@ -1180,7 +1196,7 @@ def main():
                            required=True,
                            help='File with sentences.')
     subparser.add_argument("--model-path", required=True)
-    subparser.add_argument("--simple-token", action="store_true")
+    subparser.add_argument("--lines")
     subparser.add_argument("--experiment-directory", required=True)
 
     subparser = subparsers.add_parser("produce-elmo-for-treebank")
